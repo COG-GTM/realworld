@@ -133,3 +133,75 @@ class TestCheckEmailView(TestCase):
         response = self.client.get(self.url, {"email": "tester@gmail.com"})
         self.assertEqual(response.status_code, http.HTTPStatus.OK)
         self.assertContains(response, "This email is in use")
+
+
+class TestSettingsForm(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
+            "tester@gmail.com", name="Test User", password="testpass1"
+        )
+
+    def test_save_with_password(self):
+        """Test saving SettingsForm with a new password"""
+        from .forms import SettingsForm
+        
+        form_data = {
+            "email": "tester@gmail.com",
+            "name": "Updated Name",
+            "bio": "Test bio",
+            "image": "http://example.com/image.jpg",
+            "password": "newtestpass",
+        }
+        
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+        
+        user = form.save()
+        self.assertTrue(user.check_password("newtestpass"))
+        self.assertEqual(user.name, "Updated Name")
+        
+    def test_save_without_password(self):
+        """Test saving SettingsForm without changing password"""
+        from .forms import SettingsForm
+        
+        original_password_hash = self.user.password
+        
+        form_data = {
+            "email": "tester@gmail.com",
+            "name": "Updated Name",
+            "bio": "Test bio",
+            "image": "http://example.com/image.jpg",
+            "password": "",  # Empty password - should not change
+        }
+        
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+        
+        user = form.save()
+        self.assertEqual(user.password, original_password_hash)
+        self.assertEqual(user.name, "Updated Name")
+        
+    def test_save_commit_false(self):
+        """Test saving SettingsForm with commit=False"""
+        from .forms import SettingsForm
+        
+        form_data = {
+            "email": "tester@gmail.com",
+            "name": "Not Saved",
+            "bio": "Test bio",
+            "image": "http://example.com/image.jpg",
+            "password": "notsavedpass",
+        }
+        
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+        
+        user = form.save(commit=False)
+        
+        self.assertTrue(user.check_password("notsavedpass"))
+        self.assertEqual(user.name, "Not Saved")
+        
+        db_user = User.objects.get(pk=self.user.pk)
+        self.assertFalse(db_user.check_password("notsavedpass"))
+        self.assertEqual(db_user.name, "Test User")
