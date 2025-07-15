@@ -117,6 +117,69 @@ class TestRegisterView(TestCase):
         self.assertTrue(User.objects.filter(email="tester@gmail.com").exists())
 
 
+class TestProfileView(TestCase):
+    password = "testpass"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User(
+            email="tester@gmail.com",
+            name="tester",
+        )
+        cls.user.set_password(cls.password)
+        cls.user.save()
+
+    def test_get_valid_user(self):
+        response = self.client.get(reverse("profile", args=[self.user.id]))
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertContains(response, self.user.name)
+
+    def test_get_nonexistent_user(self):
+        response = self.client.get(reverse("profile", args=[99999]))
+        self.assertEqual(response.status_code, http.HTTPStatus.NOT_FOUND)
+
+
+class TestSettingsView(TestCase):
+    password = "testpass"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User(
+            email="tester@gmail.com",
+            name="tester",
+        )
+        cls.user.set_password(cls.password)
+        cls.user.save()
+
+    def test_get_authenticated(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("settings"))
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertContains(response, "Settings")
+
+    def test_get_unauthenticated(self):
+        response = self.client.get(reverse("settings"))
+        self.assertEqual(response.status_code, http.HTTPStatus.FOUND)
+
+    def test_post_valid_form(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("settings"), {
+            "name": "Updated Name",
+            "email": "updated@gmail.com",
+            "bio": "Updated bio"
+        })
+        self.assertEqual(response.headers["HX-Redirect"], self.user.get_absolute_url())
+
+    def test_post_invalid_form(self):
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("settings"), {
+            "name": "",
+            "email": "invalid-email"
+        })
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertContains(response, "error")
+
+
 class TestCheckEmailView(TestCase):
     url = reverse_lazy("check_email")
 
@@ -133,3 +196,13 @@ class TestCheckEmailView(TestCase):
         response = self.client.get(self.url, {"email": "tester@gmail.com"})
         self.assertEqual(response.status_code, http.HTTPStatus.OK)
         self.assertContains(response, "This email is in use")
+
+    def test_empty_email(self):
+        response = self.client.get(self.url, {"email": ""})
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertEqual(response.content, b"")
+
+    def test_no_email_parameter(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertEqual(response.content, b"")
