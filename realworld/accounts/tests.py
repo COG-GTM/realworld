@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse, reverse_lazy
 
-from .forms import UserCreationForm
+from .forms import UserCreationForm, SettingsForm
 
 User = get_user_model()
 
@@ -133,3 +133,90 @@ class TestCheckEmailView(TestCase):
         response = self.client.get(self.url, {"email": "tester@gmail.com"})
         self.assertEqual(response.status_code, http.HTTPStatus.OK)
         self.assertContains(response, "This email is in use")
+
+
+class SettingsFormTest(TestCase):
+    def setUp(self):
+        self.User = get_user_model()
+        self.user = self.User.objects.create_user(
+            email='test@example.com',
+            name='Test User',
+            password='testpassword'
+        )
+        
+    def test_form_invalid_missing_fields(self):
+        form_data = {}
+        form = SettingsForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        
+        self.assertIn('email', form.errors)
+        self.assertIn('This field is required.', form.errors['email'])
+        
+        self.assertIn('name', form.errors)
+        self.assertIn('This field is required.', form.errors['name'])
+        
+        form_data = {'email': 'test@example.com'}
+        form = SettingsForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('name', form.errors)
+        
+        form_data = {'name': 'Test User'}
+        form = SettingsForm(data=form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn('email', form.errors)
+        
+    def test_form_valid_saved_not_committed(self):
+        form_data = {
+            'email': 'updated@example.com',
+            'name': 'Updated User',
+            'bio': 'Updated bio',
+            'image': 'https://example.com/image.jpg',
+            'password': 'newpassword123'
+        }
+        form = SettingsForm(data=form_data)
+        self.assertTrue(form.is_valid())
+        
+        initial_count = self.User.objects.count()
+        
+        user_instance = form.save(commit=False)
+        
+        self.assertIsNotNone(user_instance)
+        self.assertEqual(user_instance.email, 'updated@example.com')
+        self.assertEqual(user_instance.name, 'Updated User')
+        self.assertEqual(user_instance.bio, 'Updated bio')
+        self.assertEqual(user_instance.image, 'https://example.com/image.jpg')
+        self.assertTrue(user_instance.check_password('newpassword123'))
+        
+        self.assertEqual(self.User.objects.count(), initial_count)
+        
+        self.assertFalse(self.User.objects.filter(email='updated@example.com').exists())
+        
+    def test_form_valid_saved_and_committed(self):
+        form_data = {
+            'email': 'committed@example.com',
+            'name': 'Committed User',
+            'bio': 'Committed bio',
+            'image': 'https://example.com/committed.jpg',
+            'password': 'committedpass123'
+        }
+        form = SettingsForm(data=form_data)
+        self.assertTrue(form.is_valid())
+        
+        initial_count = self.User.objects.count()
+        
+        user_instance = form.save()
+        
+        self.assertIsNotNone(user_instance)
+        self.assertEqual(user_instance.email, 'committed@example.com')
+        self.assertEqual(user_instance.name, 'Committed User')
+        self.assertEqual(user_instance.bio, 'Committed bio')
+        self.assertEqual(user_instance.image, 'https://example.com/committed.jpg')
+        self.assertTrue(user_instance.check_password('committedpass123'))
+        
+        self.assertEqual(self.User.objects.count(), initial_count + 1)
+        
+        saved_user = self.User.objects.get(email='committed@example.com')
+        self.assertEqual(saved_user.name, 'Committed User')
+        self.assertEqual(saved_user.bio, 'Committed bio')
+        self.assertEqual(saved_user.image, 'https://example.com/committed.jpg')
+        self.assertTrue(saved_user.check_password('committedpass123'))
