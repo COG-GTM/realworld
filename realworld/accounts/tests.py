@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse, reverse_lazy
 
-from .forms import UserCreationForm
+from .forms import SettingsForm, UserCreationForm
 
 User = get_user_model()
 
@@ -45,6 +45,89 @@ class TestUserCreationForm(TestCase):
 
         user = form.save()
         self.assertTrue(user.check_password("testpass1"))
+
+
+class TestSettingsForm(TestCase):
+    form_data = {
+        "name": "Updated Tester",
+        "email": "updated@gmail.com",
+        "bio": "This is my bio",
+        "image": "https://example.com/image.jpg",
+        "password": "newpass123",
+    }
+
+    def test_invalid_form_missing_fields(self):
+        form_data = self.form_data.copy()
+        del form_data["email"]
+        form = SettingsForm(form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn("email", form.errors)
+        
+        form_data = self.form_data.copy()
+        del form_data["name"]
+        form = SettingsForm(form_data)
+        self.assertFalse(form.is_valid())
+        self.assertIn("name", form.errors)
+
+    def test_save_without_commit(self):
+        user = User.objects.create_user(
+            "original@gmail.com", name="Original User", password="oldpass"
+        )
+        
+        form = SettingsForm(self.form_data, instance=user)
+        self.assertTrue(form.is_valid())
+        
+        updated_user = form.save(commit=False)
+        
+        self.assertEqual(updated_user.email, "updated@gmail.com")
+        self.assertEqual(updated_user.name, "Updated Tester")
+        self.assertEqual(updated_user.bio, "This is my bio")
+        self.assertEqual(updated_user.image, "https://example.com/image.jpg")
+        self.assertTrue(updated_user.check_password("newpass123"))
+        
+        user.refresh_from_db()
+        self.assertEqual(user.email, "original@gmail.com")
+        self.assertEqual(user.name, "Original User")
+        self.assertTrue(user.check_password("oldpass"))
+
+    def test_save_with_commit(self):
+        user = User.objects.create_user(
+            "original@gmail.com", name="Original User", password="oldpass"
+        )
+        
+        form = SettingsForm(self.form_data, instance=user)
+        self.assertTrue(form.is_valid())
+        
+        updated_user = form.save(commit=True)
+        
+        self.assertEqual(updated_user.email, "updated@gmail.com")
+        self.assertEqual(updated_user.name, "Updated Tester")
+        self.assertEqual(updated_user.bio, "This is my bio")
+        self.assertEqual(updated_user.image, "https://example.com/image.jpg")
+        self.assertTrue(updated_user.check_password("newpass123"))
+        
+        user.refresh_from_db()
+        self.assertEqual(user.email, "updated@gmail.com")
+        self.assertEqual(user.name, "Updated Tester")
+        self.assertEqual(user.bio, "This is my bio")
+        self.assertEqual(user.image, "https://example.com/image.jpg")
+        self.assertTrue(user.check_password("newpass123"))
+
+    def test_save_without_password_change(self):
+        user = User.objects.create_user(
+            "original@gmail.com", name="Original User", password="oldpass"
+        )
+        
+        form_data = self.form_data.copy()
+        form_data["password"] = ""
+        
+        form = SettingsForm(form_data, instance=user)
+        self.assertTrue(form.is_valid())
+        
+        updated_user = form.save(commit=True)
+        
+        self.assertTrue(updated_user.check_password("oldpass"))
+        self.assertFalse(updated_user.check_password("newpass123"))
 
 
 class TestFollowView(TestCase):
