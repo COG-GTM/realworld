@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse, reverse_lazy
 
-from .forms import UserCreationForm
+from .forms import UserCreationForm, SettingsForm
 
 User = get_user_model()
 
@@ -45,6 +45,55 @@ class TestUserCreationForm(TestCase):
 
         user = form.save()
         self.assertTrue(user.check_password("testpass1"))
+
+
+class TestSettingsForm(TestCase):
+    valid_form_data = {
+        "name": "Updated User",
+        "email": "updated@example.com",
+        "bio": "Updated bio text",
+        "image": "https://example.com/updated.jpg",
+    }
+
+    def test_invalid_form(self):
+        form = SettingsForm({})
+        self.assertFalse(form.is_valid())
+        self.assertIn("email", form.errors)
+        self.assertIn("name", form.errors)
+
+        form = SettingsForm({"email": "test@example.com"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("name", form.errors)
+
+        form = SettingsForm({"name": "Test User"})
+        self.assertFalse(form.is_valid())
+        self.assertIn("email", form.errors)
+
+    def test_valid_form_save_no_commit(self):
+        form = SettingsForm(self.valid_form_data)
+        self.assertTrue(form.is_valid())
+
+        user = form.save(commit=False)
+        self.assertEqual(user.name, "Updated User")
+        self.assertEqual(user.email, "updated@example.com")
+        self.assertEqual(user.bio, "Updated bio text")
+        self.assertEqual(user.image, "https://example.com/updated.jpg")
+
+        self.assertIsNone(user.pk)
+        self.assertFalse(User.objects.filter(email="updated@example.com").exists())
+
+    def test_valid_form_save_with_commit(self):
+        form = SettingsForm(self.valid_form_data)
+        self.assertTrue(form.is_valid())
+
+        user = form.save(commit=True)
+        self.assertEqual(user.name, "Updated User")
+        self.assertEqual(user.email, "updated@example.com")
+        self.assertEqual(user.bio, "Updated bio text")
+        self.assertEqual(user.image, "https://example.com/updated.jpg")
+
+        self.assertIsNotNone(user.pk)
+        self.assertTrue(User.objects.filter(email="updated@example.com").exists())
 
 
 class TestFollowView(TestCase):
