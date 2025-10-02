@@ -70,9 +70,64 @@ class TestArticleModel(TestCase):
 class TestHomeView(TestCase):
     url = reverse_lazy("home")
 
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
+            "user@test.com", name="User", password="testpass"
+        )
+        cls.other_user = User.objects.create_user(
+            "other@test.com", name="Other", password="testpass"
+        )
+
     def test_get(self):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+    def test_home_view_with_own_feed_filter(self):
+        my_article = Article.objects.create(
+            title="My Article",
+            summary="Sum",
+            content="Body",
+            author=self.user,
+        )
+        other_article = Article.objects.create(
+            title="Other Article",
+            summary="Sum",
+            content="Body",
+            author=self.other_user,
+        )
+
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url + "?own")
+
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertTrue(response.context["own_feed"])
+        self.assertContains(response, "My Article")
+        self.assertNotContains(response, "Other Article")
+
+    def test_home_view_with_tag_filter(self):
+        article1 = Article.objects.create(
+            title="Python Article",
+            summary="Sum",
+            content="Body",
+            author=self.user,
+        )
+        article1.tags.add("python", "coding")
+
+        article2 = Article.objects.create(
+            title="Django Article",
+            summary="Sum",
+            content="Body",
+            author=self.user,
+        )
+        article2.tags.add("django", "web")
+
+        response = self.client.get(self.url + "?tag=python")
+
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertContains(response, "Python Article")
+        self.assertNotContains(response, "Django Article")
 
 
 class TestCreateArticleView(TestCase):
@@ -249,3 +304,146 @@ class TestTagsAutocomplete(TestCase):
     def test_empty_query_string(self):
         response = self.client.get(self.url)
         self.assertEqual(len(response.context["tags"]), 0)
+
+
+class TestEditArticleView(TestCase):
+    password = "testpass"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User(
+            email="user@test.com",
+            name="User",
+        )
+        cls.user.set_password(cls.password)
+        cls.user.save()
+
+        cls.other_user = User(
+            email="other@test.com",
+            name="Other",
+        )
+        cls.other_user.set_password(cls.password)
+        cls.other_user.save()
+
+        cls.article = Article.objects.create(
+            title="Original Title",
+            summary="Original Summary",
+            content="Original Body",
+            author=cls.user,
+        )
+
+        cls.url = reverse("edit_article", args=[cls.article.id])
+
+    def test_edit_article_get_displays_form(self):
+        from .forms import ArticleForm
+
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertIn("form", response.context)
+        self.assertIn("article", response.context)
+        self.assertIsInstance(response.context["form"], ArticleForm)
+        self.assertEqual(response.context["article"], self.article)
+
+    def test_edit_article_post_with_valid_data(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url,
+            {
+                "title": "Updated Title",
+                "summary": "Updated Summary",
+                "content": "Updated Body",
+                "tags": "python, django",
+            },
+        )
+
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.title, "Updated Title")
+        self.assertEqual(self.article.summary, "Updated Summary")
+        self.assertEqual(self.article.content, "Updated Body")
+
+    def test_edit_article_post_with_invalid_data(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url,
+            {
+                "title": "",
+                "summary": "",
+                "content": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertIn("form", response.context)
+        self.assertTrue(response.context["form"].errors)
+
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.title, "Original Title")
+
+    def test_edit_article_only_author_can_edit(self):
+        self.client.force_login(self.other_user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, http.HTTPStatus.NOT_FOUND)
+
+
+class TestDeleteArticleView(TestCase):
+    password = "testpass"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User(
+            email="user@test.com",
+            name="User",
+        )
+        cls.user.set_password(cls.password)
+        cls.user.save()
+
+        cls.other_user = User(
+            email="other@test.com",
+            name="Other",
+        )
+        cls.other_user.set_password(cls.password)
+        cls.other_user.save()
+
+    def test_delete_article_removes_article(self):
+        article = Article.objects.create(
+            title="Article to Delete",
+            summary="Summary",
+            content="Body",
+            author=self.user,
+        )
+
+        self.client.force_login(self.user)
+
+        article_id = article.id
+        url = reverse("delete_article", args=[article_id])
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, http.HTTPStatus.FOUND)
+
+        self.assertFalse(Article.objects.filter(pk=article_id).exists())
+
+    def test_delete_article_only_author_can_delete(self):
+        article = Article.objects.create(
+            title="User's Article",
+            summary="Summary",
+            content="Body",
+            author=self.user,
+        )
+
+        self.client.force_login(self.other_user)
+
+        url = reverse("delete_article", args=[article.id])
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, http.HTTPStatus.NOT_FOUND)
+
+        self.assertTrue(Article.objects.filter(pk=article.id).exists())
