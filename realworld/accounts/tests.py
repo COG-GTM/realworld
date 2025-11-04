@@ -133,3 +133,91 @@ class TestCheckEmailView(TestCase):
         response = self.client.get(self.url, {"email": "tester@gmail.com"})
         self.assertEqual(response.status_code, http.HTTPStatus.OK)
         self.assertContains(response, "This email is in use")
+
+
+class TestSettingsView(TestCase):
+    url = reverse_lazy("settings")
+    password = "testpass"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User(
+            email="tester@gmail.com",
+            name="Test User",
+            bio="Original bio",
+            image="https://example.com/image.jpg",
+        )
+        cls.user.set_password(cls.password)
+        cls.user.save()
+
+    def test_get_unauthenticated(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.FOUND)
+        self.assertTrue(response.url.startswith("/login/"))
+
+    def test_get_authenticated(self):
+        self.client.force_login(self.user)
+        response = self.client.get(self.url)
+        
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertIn("form", response.context)
+        form = response.context["form"]
+        self.assertEqual(form.instance, self.user)
+
+    def test_post_valid(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            self.url,
+            {
+                "name": "Updated Name",
+                "email": "updated@gmail.com",
+                "bio": "Updated bio",
+                "image": "https://example.com/new-image.jpg",
+            },
+        )
+        
+        self.assertEqual(
+            response.headers["HX-Redirect"], 
+            self.user.get_absolute_url()
+        )
+        
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.name, "Updated Name")
+        self.assertEqual(self.user.email, "updated@gmail.com")
+        self.assertEqual(self.user.bio, "Updated bio")
+        self.assertEqual(self.user.image, "https://example.com/new-image.jpg")
+
+    def test_post_invalid(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            self.url,
+            {
+                "email": "invalid-email",
+            },
+        )
+        
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertIn("form", response.context)
+        form = response.context["form"]
+        self.assertFalse(form.is_valid())
+
+    def test_post_with_password(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            self.url,
+            {
+                "name": self.user.name,
+                "email": self.user.email,
+                "bio": self.user.bio,
+                "image": self.user.image,
+                "password": "newpassword123",
+            },
+        )
+        
+        self.assertEqual(
+            response.headers["HX-Redirect"], 
+            self.user.get_absolute_url()
+        )
+        
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("newpassword123"))
