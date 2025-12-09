@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse, reverse_lazy
 
-from .forms import UserCreationForm
+from .forms import SettingsForm, UserCreationForm
 
 User = get_user_model()
 
@@ -45,6 +45,161 @@ class TestUserCreationForm(TestCase):
 
         user = form.save()
         self.assertTrue(user.check_password("testpass1"))
+
+
+class TestSettingsForm(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
+            "tester@gmail.com", name="Test User", password="testpass1"
+        )
+
+    def test_valid_form_with_all_fields(self):
+        form_data = {
+            "name": "Updated Name",
+            "email": "updated@gmail.com",
+            "bio": "This is my bio",
+            "image": "https://example.com/image.jpg",
+            "password": "",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+
+    def test_valid_form_with_required_fields_only(self):
+        form_data = {
+            "name": "Updated Name",
+            "email": "updated@gmail.com",
+            "bio": "",
+            "image": "",
+            "password": "",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+
+    def test_invalid_form_missing_name(self):
+        form_data = {
+            "name": "",
+            "email": "updated@gmail.com",
+            "bio": "",
+            "image": "",
+            "password": "",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertFalse(form.is_valid())
+        self.assertIn("name", form.errors)
+
+    def test_invalid_form_missing_email(self):
+        form_data = {
+            "name": "Updated Name",
+            "email": "",
+            "bio": "",
+            "image": "",
+            "password": "",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertFalse(form.is_valid())
+        self.assertIn("email", form.errors)
+
+    def test_invalid_form_invalid_email(self):
+        form_data = {
+            "name": "Updated Name",
+            "email": "invalid-email",
+            "bio": "",
+            "image": "",
+            "password": "",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertFalse(form.is_valid())
+        self.assertIn("email", form.errors)
+
+    def test_invalid_form_invalid_image_url(self):
+        form_data = {
+            "name": "Updated Name",
+            "email": "updated@gmail.com",
+            "bio": "",
+            "image": "not-a-valid-url",
+            "password": "",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertFalse(form.is_valid())
+        self.assertIn("image", form.errors)
+
+    def test_save_without_password_change(self):
+        original_password = self.user.password
+        form_data = {
+            "name": "Updated Name",
+            "email": "updated@gmail.com",
+            "bio": "New bio",
+            "image": "",
+            "password": "",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+
+        user = form.save()
+        self.assertEqual(user.name, "Updated Name")
+        self.assertEqual(user.email, "updated@gmail.com")
+        self.assertEqual(user.bio, "New bio")
+        self.assertEqual(user.password, original_password)
+
+    def test_save_with_password_change(self):
+        form_data = {
+            "name": "Updated Name",
+            "email": "updated@gmail.com",
+            "bio": "",
+            "image": "",
+            "password": "newpassword123",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+
+        user = form.save()
+        self.assertTrue(user.check_password("newpassword123"))
+        self.assertFalse(user.check_password("testpass1"))
+
+    def test_save_with_commit_false(self):
+        form_data = {
+            "name": "Updated Name",
+            "email": "updated@gmail.com",
+            "bio": "",
+            "image": "",
+            "password": "",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+
+        user = form.save(commit=False)
+        self.assertEqual(user.name, "Updated Name")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.name, "Test User")
+
+    def test_save_with_commit_false_and_password(self):
+        form_data = {
+            "name": "Updated Name",
+            "email": "updated@gmail.com",
+            "bio": "",
+            "image": "",
+            "password": "newpassword123",
+        }
+        form = SettingsForm(form_data, instance=self.user)
+        self.assertTrue(form.is_valid())
+
+        user = form.save(commit=False)
+        self.assertTrue(user.check_password("newpassword123"))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("testpass1"))
+
+    def test_form_fields(self):
+        form = SettingsForm(instance=self.user)
+        self.assertIn("email", form.fields)
+        self.assertIn("name", form.fields)
+        self.assertIn("bio", form.fields)
+        self.assertIn("image", form.fields)
+        self.assertIn("password", form.fields)
+
+    def test_password_field_is_optional(self):
+        form = SettingsForm(instance=self.user)
+        self.assertFalse(form.fields["password"].required)
 
 
 class TestFollowView(TestCase):
