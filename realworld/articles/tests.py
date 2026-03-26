@@ -66,12 +66,31 @@ class TestArticleModel(TestCase):
         self.assertEqual(article.num_favorites, 1)
         self.assertTrue(article.is_favorite)
 
+    def test_str(self):
+        self.assertEqual(str(self.article), "test")
+
 
 class TestHomeView(TestCase):
     url = reverse_lazy("home")
 
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User(email="tester@gmail.com", name="tester")
+        cls.user.set_password("testpass")
+        cls.user.save()
+
     def test_get(self):
         response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+    def test_own_feed(self):
+        self.client.force_login(self.user)
+        response = self.client.get(self.url, {"own": "1"})
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertTrue(response.context["own_feed"])
+
+    def test_tag_filter(self):
+        response = self.client.get(self.url, {"tag": "python"})
         self.assertEqual(response.status_code, http.HTTPStatus.OK)
 
 
@@ -229,6 +248,80 @@ class TestFavoriteView(TestCase):
 
         self.assertFalse(response.context["is_favorite"])
         self.assertTrue(response.context["is_detail"])
+
+
+class TestEditArticleView(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.author = User(email="tester@gmail.com", name="tester")
+        cls.author.set_password("testpass")
+        cls.author.save()
+
+        cls.other_user = User(email="other@gmail.com", name="other")
+        cls.other_user.set_password("testpass")
+        cls.other_user.save()
+
+        cls.article = Article.objects.create(
+            title="Original", summary="test", content="test", author=cls.author,
+        )
+        cls.url = reverse("edit_article", args=[cls.article.id])
+
+    def setUp(self):
+        self.client.force_login(self.author)
+
+    def test_get_edit_form(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+    def test_post_valid_edit(self):
+        response = self.client.post(self.url, {
+            "title": "Updated Title",
+            "summary": "updated",
+            "content": "updated content",
+            "tags": "django",
+        })
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.title, "Updated Title")
+
+    def test_post_invalid_edit(self):
+        response = self.client.post(self.url, {"title": ""})
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+    def test_edit_by_non_author(self):
+        self.client.force_login(self.other_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.NOT_FOUND)
+
+
+class TestDeleteArticleView(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.author = User(email="tester@gmail.com", name="tester")
+        cls.author.set_password("testpass")
+        cls.author.save()
+
+        cls.other_user = User(email="other@gmail.com", name="other")
+        cls.other_user.set_password("testpass")
+        cls.other_user.save()
+
+    def test_delete_article(self):
+        article = Article.objects.create(
+            title="test", summary="test", content="test", author=self.author,
+        )
+        self.client.force_login(self.author)
+        url = reverse("delete_article", args=[article.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, http.HTTPStatus.FOUND)
+        self.assertFalse(Article.objects.filter(pk=article.id).exists())
+
+    def test_delete_by_non_author(self):
+        article = Article.objects.create(
+            title="test", summary="test", content="test", author=self.author,
+        )
+        self.client.force_login(self.other_user)
+        url = reverse("delete_article", args=[article.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, http.HTTPStatus.NOT_FOUND)
 
 
 class TestTagsAutocomplete(TestCase):
