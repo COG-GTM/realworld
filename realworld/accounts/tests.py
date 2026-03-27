@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse, reverse_lazy
 
-from .forms import UserCreationForm
+from .forms import SettingsForm, UserCreationForm
 
 User = get_user_model()
 
@@ -30,6 +30,12 @@ class TestUserModel(TestCase):
 
     def test_get_short_name(self):
         self.assertEqual(User(name="Test User").get_short_name(), "Test User")
+
+    def test_get_absolute_url(self):
+        user = User.objects.create_user(
+            "testurl@example.com", name="URL User", password="testpass1"
+        )
+        self.assertEqual(user.get_absolute_url(), reverse("profile", args=[user.id]))
 
 
 class TestUserCreationForm(TestCase):
@@ -133,3 +139,159 @@ class TestCheckEmailView(TestCase):
         response = self.client.get(self.url, {"email": "tester@gmail.com"})
         self.assertEqual(response.status_code, http.HTTPStatus.OK)
         self.assertContains(response, "This email is in use")
+
+
+class TestProfileView(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
+            "profile@example.com", name="Profile User", password="testpass1"
+        )
+        cls.other_user = User.objects.create_user(
+            "other@example.com", name="Other User", password="testpass1"
+        )
+        cls.url = reverse("profile", args=[cls.user.id])
+
+    def test_get_own_profile(self):
+        self.client.force_login(self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+        self.assertContains(response, self.user.name)
+
+    def test_get_other_profile(self):
+        self.client.force_login(self.other_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+    def test_get_profile_anonymous(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+    def test_profile_not_found(self):
+        url = reverse("profile", args=[99999])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, http.HTTPStatus.NOT_FOUND)
+
+    def test_profile_with_favorites_filter(self):
+        self.client.force_login(self.user)
+        response = self.client.get(self.url + "?favorites")
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+    def test_profile_shows_following_status(self):
+        self.user.followers.add(self.other_user)
+        self.client.force_login(self.other_user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+
+class TestSettingsView(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
+            "settings@example.com", name="Settings User", password="testpass1"
+        )
+        cls.url = reverse("settings")
+
+    def test_get_requires_login(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.FOUND)
+
+    def test_get_authenticated(self):
+        self.client.force_login(self.user)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+    def test_post_valid_update_name(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            self.url,
+            {
+                "email": self.user.email,
+                "name": "New Name",
+                "bio": "",
+                "image": "",
+                "password": "",
+            },
+        )
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.name, "New Name")
+
+    def test_post_valid_update_password(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            self.url,
+            {
+                "email": self.user.email,
+                "name": self.user.name,
+                "bio": "",
+                "image": "",
+                "password": "newpassword123",
+            },
+        )
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("newpassword123"))
+
+    def test_post_invalid_email(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            self.url,
+            {
+                "email": "",
+                "name": "",
+                "bio": "",
+                "image": "",
+                "password": "",
+            },
+        )
+        self.assertEqual(response.status_code, http.HTTPStatus.OK)
+
+
+class TestSettingsForm(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            "form@example.com", name="Form User", password="testpass1"
+        )
+
+    def test_save_without_password(self):
+        form = SettingsForm(
+            {
+                "email": "new@example.com",
+                "name": "New",
+                "bio": "",
+                "image": "",
+                "password": "",
+            },
+            instance=self.user,
+        )
+        self.assertTrue(form.is_valid())
+        user = form.save()
+        self.assertEqual(user.email, "new@example.com")
+        self.assertTrue(user.check_password("testpass1"))
+
+    def test_save_with_password(self):
+        form = SettingsForm(
+            {
+                "email": "form@example.com",
+                "name": "Form User",
+                "bio": "",
+                "image": "",
+                "password": "newpass456",
+            },
+            instance=self.user,
+        )
+        self.assertTrue(form.is_valid())
+        user = form.save()
+        self.assertTrue(user.check_password("newpass456"))
+
+    def test_invalid_email(self):
+        form = SettingsForm(
+            {
+                "email": "not-an-email",
+                "name": "",
+                "bio": "",
+                "image": "",
+                "password": "",
+            },
+            instance=self.user,
+        )
+        self.assertFalse(form.is_valid())
