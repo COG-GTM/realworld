@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth import login as auth_login
 from django.contrib.auth.decorators import login_required
+from django.db.models import Prefetch
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse
@@ -24,7 +25,7 @@ def profile(request: HttpRequest, user_id: int) -> HttpResponse:
         Article.objects.select_related("author")
         .filter(author=profile)
         .with_favorites(request.user)
-        .prefetch_related("tags")
+        .prefetch_related(Prefetch("tags", to_attr="tag_list"))
         .order_by("-created")
     )
 
