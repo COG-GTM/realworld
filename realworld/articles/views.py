@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth.decorators import login_required
+from django.db.models import Prefetch
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse
@@ -21,7 +22,7 @@ def home(request: HttpRequest) -> HttpResponse:
     articles = (
         Article.objects.select_related("author")
         .with_favorites(request.user)
-        .prefetch_related("tags")
+        .prefetch_related(Prefetch("tags", to_attr="tag_list"))
         .order_by("-created")
     )
 
